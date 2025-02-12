@@ -1,6 +1,7 @@
 import socket
 import threading
 import db
+import menus
 
 bind_ip = "0.0.0.0"
 bind_port = 2323
