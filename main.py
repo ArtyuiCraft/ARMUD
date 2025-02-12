@@ -14,6 +14,7 @@ server.bind((bind_ip, bind_port))
 server.listen(5)
 
 clients = []
+parties = []
 
 print(f"[+] Listening on port {bind_ip} : {bind_port}")
 
@@ -23,6 +24,18 @@ def is_socket_connected(sock):
         return True
     except (BrokenPipeError, ConnectionResetError):
         return False
+
+class Party:
+    def __init__(self, creator, id):
+        self.creator = creator
+        self.joinedpeople = []
+        self.partyid = id
+
+    def addperson(self, name):
+        self.joinedpeople.append(name)
+
+    def removeperson(self, name):
+        self.joinedpeople.remove(name)
 
 class user:
     def __init__(self,client_socket, addr):
@@ -76,6 +89,14 @@ def command(client):
             sendall(f"[Chat] {client.username}: {" ".join(args)}")
         case "help":
             send(client_socket,"commands: \n - help: shows this \n - say <message>: send a chat message!!")
+        case "startparty":
+            #startparty Help me defeat this boss
+            #[PartyRequest] Artyui: Help me defeat this boss run joinparty 4 to join
+            parties.append(Party(user.username,len(parties)))
+            message = " ".join(args)
+            sendall("[PartyRequest] "+ user.username + ": " + message )
+        case "joinparty":
+            parties[args[0]].addperson(client.username)
         case _:
             send(client_socket,"Not a valid command.")
 
