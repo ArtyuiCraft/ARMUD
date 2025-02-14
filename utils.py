@@ -143,8 +143,7 @@ class user:
             self.data = parse_telnet_data(str(client_socket.recv(1024)))
             self.mudlet = True if self.data["xc9Core.Hello"]["client"] == "Mudlet" else False
             if self.mudlet:
-                #gmcpsend(client_socket,'Client.GUI { "version": "1", "url": "https://github.com/ArtyuiCraft/ARMUDlet/raw/refs/heads/main/ARMUDlet.mpackage"}')
-                pass
+                gmcpsend(client_socket,'Client.GUI { "version": "1", "url": "https://github.com/ArtyuiCraft/ARMUDlet/raw/refs/heads/main/ARMUDlet.mpackage" } ')
 
 def bsend(client_socket,content):
     client_socket.send(content)
