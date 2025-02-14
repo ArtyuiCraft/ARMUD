@@ -119,6 +119,8 @@ class Party:
         self.joinedpeople.append(name)
 
     def removeperson(self, name):
+        print(self.joinedpeople)
+        print(name)
         self.joinedpeople.remove(name)
 
 class user:
@@ -149,14 +151,14 @@ def bsend(client_socket,content):
     client_socket.send(content)
 
 def gmcpsend(client_socket,content):
-    client_socket.send(content.encode(), socket.MSG_OOB)
+    client_socket.send(IAC + SB + GMCP + content.encode() + IAC + SE, socket.MSG_OOB)
 
-def send(client_socket,content="",lines=1):
-    sending = ("\n"*lines)+content
+def send(client_socket,content="",lines=0):
+    sending = ("\n"*lines)+content+"\n"
     client_socket.send(sending.encode())
 
-def sendall(content="", lines=1):
-    sending = ("\n" * lines) + content
+def sendall(content="", lines=0):
+    sending = ("\n" * lines) + content + "\n"
     disconnected_clients = []
 
     for client in clients:
@@ -178,7 +180,27 @@ def cinput(client_socket, question="",code=True,nosend=False):
 def get_client(username):
     return next((client for client in clients if client.username == username), None)
 
+def send_room(client):
+    send(client.client_socket,"")
+    map = '''#############
+#           #
+#           #
+#           #
+#           #
+#############'''
+    if client.mudlet:
+        tmp = ''
+        tmp += '[STARTMAP]\n'
+        for i in map.split("\n"):
+            tmp += "[MAP] "+i+"\n"
+        for i in tmp.split("\n"):
+            send(client.client_socket, i)
+    else:
+        for i in map.split("\n"):
+            send(client.client_socket, i)
+
 def command(client):
+    send_room(client)
     client_socket = client.client_socket
     data = cinput(client_socket,nosend=True).split(" ")
     command = data[0].lower()
@@ -200,11 +222,12 @@ def command(client):
         case ("createparty" | "cp"):
             if client.joinedparty == None:
                 parties.append(Party(client.username,len(parties)))
+                parties[-1].addperson(client.username)
                 client.joinedparty = parties[-1]
                 send(client_socket,f"Party {len(parties)-1} created")
             else:
                 send(client_socket,f"Leave your current party first using leaveparty")
-        case ("partyrequest" | "pq"):
+        case ("partyrequest" | "pr"):
             if args[0] == "all":
                 args.pop(0)
                 message = " ".join(args)
@@ -236,6 +259,14 @@ def command(client):
                 send(client_socket,"Choose global or party")
             else:
                 client.chat = args[0]
+        case ("up"|"u"):
+            pass
+        case ("down"|"d"):
+            pass
+        case ("left"|"l"):
+            pass
+        case ("right"|"r"):
+            pass
         case _:
             send(client_socket,"Not a valid command.")
 
@@ -269,7 +300,7 @@ def login_sequence(client_socket, addr, ipcheck=True):
             if db.get_user_by_ip(addr[0]) == False:
                 send(client_socket, "Adding ip connection...")
                 db.add_ip_for_user(addr[0],db.get_user_id(username))
-            send(client_socket, "Ok logged in.")
+            send(client_socket, "Ok logged in.\n")
             return username
         else:
             send(client_socket, "Wrong password.")
