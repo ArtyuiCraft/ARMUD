@@ -1,10 +1,92 @@
 import db
 import socket
+import re
+import json
+import pickle
 
 db.init()
 
 clients = []
 parties = []
+
+# TELNET
+IAC  = bytes([255])
+SB   = bytes([250])
+GMCP = bytes([201])
+SE   = bytes([240])
+WILL = bytes([251])
+
+class Array3D:
+    def __init__(self, x, y, z, c=""):
+        self.lst = [[[ c for _ in range(x)] for _ in range(y)] for _ in range(z)]
+
+    def list(self):
+        return self.lst
+
+    def str(self,z):
+        tmp = ""
+        for y in self.lst[z]:
+            for x in y:
+                tmp += str(x)
+            tmp += "\n"
+        return tmp
+
+    def set(self,x,y,z,c=" "):
+        self.lst[z][y][x] = c
+
+    def __repr__(self):
+        return self.str(0)
+
+class Array2D:
+    def __init__(self, x, y, c=""):
+        self.lst = [[ c for _ in range(x)] for _ in range(y)]
+
+    def list(self):
+        return self.lst
+
+    def str(self):
+        tmp = ""
+        for y in self.lst:
+            for x in y:
+                tmp += str(x)
+            tmp += "\n"
+        return tmp
+
+    def set(self,x,y,c=" "):
+        self.lst[y][x] = c
+
+    def __repr__(self):
+        return self.str()
+
+class Room:
+    def __init__(self,x,y):
+        self.array = Array2D(self,x,y)
+        self.exits = {}
+
+    def str(self):
+        return self.array.str()
+
+    def set(self,x,y,c=" "):
+        self.array.lst[y][x] = c
+
+    def __repr__(self):
+        return self.str()
+
+class World:
+    def __init__(self):
+        self.world: Array3D = Array3D(100,100,10)
+
+    def save(self, filename="world.pkl"):
+        with open(filename, "wb") as file:
+            pickle.dump(self, file)
+        print(f"World saved to {filename}")
+
+    @staticmethod
+    def load(filename="world.pkl"):
+        with open(filename, "rb") as file:
+            world = pickle.load(file)
+        print(f"World loaded from {filename}")
+        return world
 
 def is_socket_connected(sock):
     try:
@@ -12,6 +94,20 @@ def is_socket_connected(sock):
         return True
     except (BrokenPipeError, ConnectionResetError):
         return False
+
+def parse_telnet_data(data: str):
+    clean_data = re.sub(r'\xff[\xfd\xfa\xf0]', '', data)
+
+    entries = re.findall(r'([\w.]+)\s*(\{.*?\}|\[.*?\]|$)', clean_data)
+
+    parsed_data = {}
+    for key, value in entries:
+        try:
+            parsed_data[key] = json.loads(value)
+        except json.JSONDecodeError:
+            parsed_data[key] = value.strip()
+
+    return parsed_data
 
 class Party:
     def __init__(self, creator, id):
@@ -41,7 +137,20 @@ class user:
             self.port = addr[1]
             self.error = False
             self.joinedparty = None
+            self.chat = "global"
+            bsend(client_socket,IAC + SB + GMCP + SE)
+            bsend(client_socket,IAC + WILL + GMCP)
+            self.data = parse_telnet_data(str(client_socket.recv(1024)))
+            self.mudlet = True if self.data["xc9Core.Hello"]["client"] == "Mudlet" else False
+            if self.mudlet:
+                #gmcpsend(client_socket,'Client.GUI { "version": "1", "url": "https://github.com/ArtyuiCraft/ARMUDlet/raw/refs/heads/main/ARMUDlet.mpackage"}')
+                pass
 
+def bsend(client_socket,content):
+    client_socket.send(content)
+
+def gmcpsend(client_socket,content):
+    client_socket.send(content.encode(), socket.MSG_OOB)
 
 def send(client_socket,content="",lines=1):
     sending = ("\n"*lines)+content
@@ -77,18 +186,26 @@ def command(client):
     data.pop(0)
     args = data
     match command:
-        case "say":
-            sendall(f"[Chat] {client.username}: {" ".join(args)}")
-        case "help":
+        case ("say" | "s"):
+            if client.chat.lower() == "global":
+                sendall(f"[Chat] {client.username}: {" ".join(args)}")
+            elif client.chat.lower() == "party":
+                if client.joinedparty == None:
+                    send(client_socket,"You sent that to no one")
+                else:
+                    send(client_socket,f"[PartyChat] {client.username}: {" ".join(args)}")
+                    for i in client.joinedparty.joinedpeople:
+                        send(i.client_socket,f"[PartyChat] {client.username}: {" ".join(args)}")
+        case ("help" | "?"):
             send(client_socket,"commands: \n - help: shows this \n - say <message>: send a chat message!!")
-        case "createparty":
+        case ("createparty" | "cp"):
             if client.joinedparty == None:
                 parties.append(Party(client.username,len(parties)))
                 client.joinedparty = parties[-1]
                 send(client_socket,f"Party {len(parties)-1} created")
             else:
                 send(client_socket,f"Leave your current party first using leaveparty")
-        case "partyrequest":
+        case ("partyrequest" | "pq"):
             if args[0] == "all":
                 args.pop(0)
                 message = " ".join(args)
@@ -99,7 +216,7 @@ def command(client):
                     send(checkclient.client_socket,f"{client.username} sent you a request to join his party run joinparty {client.joinedparty.partyid}")
                 else:
                     send(client_socket,f"No user found with the username: {args[0]}")
-        case "joinparty":
+        case ("joinparty"| "jp"):
             if client.joinedparty == None:
                 id = int(args[0])
                 parties[id].addperson(client)
@@ -107,7 +224,7 @@ def command(client):
                 send(client_socket,f"Joined party {id}")
             else:
                 send(client_socket,"Leave your current party first using leaveparty")
-        case "leaveparty":
+        case ("leaveparty" | "lp"):
             if client.joinedparty == None:
                 send(client_socket,"No party to leave")
             else:
@@ -119,7 +236,7 @@ def command(client):
             if args[0] not in ("global","party"):
                 send(client_socket,"Choose global or party")
             else:
-                user.chat
+                client.chat = args[0]
         case _:
             send(client_socket,"Not a valid command.")
 
